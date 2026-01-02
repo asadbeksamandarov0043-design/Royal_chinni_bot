@@ -4,12 +4,15 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
+    ConversationHandler,
     filters
 )
 
 TOKEN = "8485717621:AAFG-uTaq3OBbMis0tBVNxRZVDbKOZos4hA"
 
-# /start komandasi
+# Buyurtma bosqichlari
+PRODUCT, QUANTITY = range(2)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         ["📦 Buyurtma berish"],
@@ -27,39 +30,51 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# Tugmalarni ushlash
-async def menu_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📦 Buyurtma berish boshlandi.\n"
+        "Qaysi mahsulotni olmoqchisiz?"
+    )
+    return PRODUCT
 
-    if text == "📦 Buyurtma berish":
-        await update.message.reply_text(
-            "🛒 Buyurtma berish bo‘limi.\n"
-            "Tez orada mahsulotlar qo‘shiladi."
-        )
+async def product_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["product"] = update.message.text
+    await update.message.reply_text(
+        "Nechta dona olmoqchisiz?"
+    )
+    return QUANTITY
 
-    elif text == "ℹ️ Biz haqimizda":
-        await update.message.reply_text(
-            "Royal Chinni — sifatli mahsulotlar va halol savdo 🏪"
-        )
+async def quantity_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["quantity"] = update.message.text
 
-    elif text == "📞 Aloqa":
-        await update.message.reply_text(
-            "📞 Telefon: +998 90 000 00 00\n"
-            "📍 Manzil: Bozor ichida"
-        )
+    product = context.user_data["product"]
+    quantity = context.user_data["quantity"]
 
-    else:
-        await update.message.reply_text(
-            "Iltimos, menyudagi tugmalardan foydalaning 👇"
-        )
+    await update.message.reply_text(
+        "✅ Buyurtma qabul qilindi!\n\n"
+        f"📦 Mahsulot: {product}\n"
+        f"🔢 Soni: {quantity}\n\n"
+        "Tez orada operator siz bilan bog‘lanadi."
+    )
+
+    return ConversationHandler.END
 
 def main():
     print("BOT ISHGA TUSHDI")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
+    conv_handler = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📦 Buyurtma berish$"), order_start)],
+        states={
+            PRODUCT: [MessageHandler(filters.TEXT & ~filters.COMMAND, product_step)],
+            QUANTITY: [MessageHandler(filters.TEXT & ~filters.COMMAND, quantity_step)],
+        },
+        fallbacks=[]
+    )
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT, menu_handler))
+    app.add_handler(conv_handler)
 
     app.run_polling()
 
