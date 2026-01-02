@@ -1,107 +1,121 @@
-await update.message.reply_text("Buyurtma qabul qilindi ✅", reply_markup=client_menu())
-    return ConversationHandler.END
+import sqlite3
+from datetime import datetime, timedelta
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    ConversationHandler, ContextTypes, filters
+)
 
-# ===================== QARZ =====================
-async def my_debt(update, context):
-    uid = update.effective_user.id
-    cur.execute("SELECT SUM(debt) FROM orders WHERE telegram_id=? AND debt>0", (uid,))
-    debt = cur.fetchone()[0] or 0
-    await update.message.reply_text(f"💳 Jami qarzingiz: {debt:,} so‘m")
+# ===================== SOZLAMALAR =====================
+TOKEN = "8485717621:AAFG-uTaq3OBbMis0tBVNxRZVDbKOZos4hA"   
+ADMINS = [5234451700]
 
-async def pay_debt(update, context):
-    await update.message.reply_text("Qancha summa to‘ladingiz?")
-    return PAY_AMOUNT
+# ===================== DATABASE ======================
+conn = sqlite3.connect("database.db", check_same_thread=False)
+cur = conn.cursor()
 
-async def save_payment(update, context):
-    amount = int(update.message.text)
-    uid = update.effective_user.id
+cur.execute("""
+CREATE TABLE IF NOT EXISTS users(
+    telegram_id INTEGER PRIMARY KEY,
+    first_name TEXT,
+    last_name TEXT,
+    birthday TEXT,
+    phone TEXT,
+    address TEXT
+)
+""")
 
-    cur.execute(
-        "SELECT id,debt FROM orders WHERE telegram_id=? AND debt>0 ORDER BY id LIMIT 1",
-        (uid,)
+conn.commit()
+
+# ===================== STATES ========================
+FIRST_NAME, LAST_NAME, BIRTHDAY, PHONE, ADDRESS = range(5)
+
+# ===================== MENYU =========================
+def client_menu():
+    return ReplyKeyboardMarkup(
+        [["🛒 Buyurtma berish"], ["💳 Mening qarzim"]],
+        resize_keyboard=True
     )
-    order = cur.fetchone()
-    if not order:
-        await update.message.reply_text("Qarz topilmadi")
+
+# ===================== START =========================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    cur.execute("SELECT first_name FROM users WHERE telegram_id=?", (uid,))
+    user = cur.fetchone()
+
+    if user:
+        await update.message.reply_text(
+            f"Assalomu alaykum, {user[0]} 😊",
+            reply_markup=client_menu()
+        )
         return ConversationHandler.END
+    else:
+        await update.message.reply_text("Ismingizni kiriting:")
+        return FIRST_NAME
 
-    oid, debt = order
-    new_debt = max(debt - amount, 0)
+# ===================== REGISTRATSIYA =================
+async def reg_first(update, context):
+    context.user_data["first_name"] = update.message.text
+    await update.message.reply_text("Familiyangizni kiriting:")
+    return LAST_NAME
 
+async def reg_last(update, context):
+    context.user_data["last_name"] = update.message.text
+    await update.message.reply_text("Tug‘ilgan sana (DD.MM.YYYY):")
+    return BIRTHDAY
+
+async def reg_birth(update, context):
+    context.user_data["birthday"] = update.message.text
+    await update.message.reply_text("Telefon raqam:")
+    return PHONE
+
+async def reg_phone(update, context):
+    context.user_data["phone"] = update.message.text
+    await update.message.reply_text("Manzil:")
+    return ADDRESS
+
+async def reg_address(update, context):
+    d = context.user_data
     cur.execute(
-        "UPDATE orders SET debt=?, is_closed=? WHERE id=?",
-        (new_debt, 1 if new_debt == 0 else 0, oid)
-    )
-    cur.execute(
-        "INSERT INTO payments VALUES (NULL,?,?,?)",
-        (oid, amount, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        "INSERT INTO users VALUES (?,?,?,?,?,?)",
+        (
+            update.effective_user.id,
+            d["first_name"],
+            d["last_name"],
+            d["birthday"],
+            d["phone"],
+            update.message.text
+        )
     )
     conn.commit()
 
-    await update.message.reply_text("To‘lov qabul qilindi ✅", reply_markup=client_menu())
+    await update.message.reply_text(
+        "Ro‘yxatdan o‘tdingiz ✅",
+        reply_markup=client_menu()
+    )
     return ConversationHandler.END
 
-# ===================== ESLATMA =====================
-async def reminders(app):
-    if not ENABLE_REMINDERS:
-        return
-
-    today = datetime.now().date()
-    cur.execute("SELECT telegram_id,debt,due_date FROM orders WHERE debt>0")
-    for uid, debt, due in cur.fetchall():
-        days = (datetime.strptime(due, "%Y-%m-%d").date() - today).days
-        if days in (3, 1, 0):
-            await app.bot.send_message(
-                uid,
-                f"⚠️ Qarzingiz: {debt:,} so‘m\n⏰ {days} kun qoldi"
-            )
-
-# ===================== TUG‘ILGAN KUN =====================
-async def birthdays(app):
-    if not ENABLE_BIRTHDAY:
-        return
-
-    today = datetime.now().strftime("%d.%m")
-    cur.execute("SELECT telegram_id,first_name FROM users WHERE birthday LIKE ?", (f"{today}%",))
-    for uid, name in cur.fetchall():
-        await app.bot.send_message(uid, f"🎉 {name}, tug‘ilgan kuningiz bilan!")
-
-# ===================== MAIN =====================
+# ===================== MAIN ==========================
 def main():
     print("BOT ISHGA TUSHDI")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.job_queue.run_repeating(reminders, interval=86400, first=10)
-    app.job_queue.run_repeating(birthdays, interval=86400, first=20)
-
-    app.add_handler(ConversationHandler(
+    conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
-            REG_NAME: [MessageHandler(filters.TEXT, reg_name)],
-            REG_LAST: [MessageHandler(filters.TEXT, reg_last)],
-            REG_BIRTH: [MessageHandler(filters.TEXT, reg_birth)],
-            REG_PHONE: [MessageHandler(filters.TEXT, reg_phone)],
-            REG_ADDRESS: [MessageHandler(filters.TEXT, reg_address)],
+            FIRST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_first)],
+            LAST_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_last)],
+            BIRTHDAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_birth)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],
+            ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_address)],
         },
         fallbacks=[]
-    ))
+    )
 
-    app.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("🛒 Buyurtma berish"), order)],
-        states={ORDER_DAYS: [MessageHandler(filters.TEXT, order_days)]},
-        fallbacks=[]
-    ))
-
-    app.add_handler(MessageHandler(filters.Regex("💳 Mening qarzim"), my_debt))
-
-    app.add_handler(ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("💳 Qarzimni to‘ladim"), pay_debt)],
-        states={PAY_AMOUNT: [MessageHandler(filters.TEXT, save_payment)]},
-        fallbacks=[]
-    ))
-
+    app.add_handler(conv)
     app.run_polling()
 
+# ===================== RUN ===========================
 if __name__ == "__main__":
     main()
