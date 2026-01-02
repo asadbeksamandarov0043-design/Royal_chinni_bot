@@ -9,8 +9,8 @@ from telegram.ext import (
 )
 
 TOKEN = "8485717621:AAFG-uTaq3OBbMis0tBVNxRZVDbKOZos4hA"
+ADMIN_ID = 5234451700  
 
-# Buyurtma bosqichlari
 PRODUCT, QUANTITY = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -18,44 +18,47 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["📦 Buyurtma berish"],
         ["ℹ️ Biz haqimizda", "📞 Aloqa"]
     ]
-    reply_markup = ReplyKeyboardMarkup(
-        keyboard,
-        resize_keyboard=True
-    )
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
     await update.message.reply_text(
-        "Salom 👋\n"
-        "Royal Chinni botiga xush kelibsiz!\n"
-        "Quyidagi tugmalardan birini tanlang 👇",
+        "Salom 👋 Royal Chinni botiga xush kelibsiz!\n"
+        "Buyurtma berish uchun tugmani bosing 👇",
         reply_markup=reply_markup
     )
 
 async def order_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📦 Buyurtma berish boshlandi.\n"
-        "Qaysi mahsulotni olmoqchisiz?"
-    )
+    await update.message.reply_text("Qaysi mahsulotni olmoqchisiz?")
     return PRODUCT
 
 async def product_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["product"] = update.message.text
-    await update.message.reply_text(
-        "Nechta dona olmoqchisiz?"
-    )
+    await update.message.reply_text("Nechta dona olmoqchisiz?")
     return QUANTITY
 
 async def quantity_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["quantity"] = update.message.text
-
     product = context.user_data["product"]
-    quantity = context.user_data["quantity"]
+    quantity = update.message.text
 
+    user = update.message.from_user
+    username = user.username or "username yo‘q"
+    user_id = user.id
+
+    # Mijozga javob
     await update.message.reply_text(
-        "✅ Buyurtma qabul qilindi!\n\n"
-        f"📦 Mahsulot: {product}\n"
-        f"🔢 Soni: {quantity}\n\n"
-        "Tez orada operator siz bilan bog‘lanadi."
+        "✅ Buyurtmangiz qabul qilindi!\n"
+        "Tez orada siz bilan bog‘lanamiz."
     )
+
+    # ADMIN ga yuborish
+    admin_text = (
+        "🛎 YANGI BUYURTMA!\n\n"
+        f"👤 Foydalanuvchi: @{username}\n"
+        f"🆔 ID: {user_id}\n"
+        f"📦 Mahsulot: {product}\n"
+        f"🔢 Soni: {quantity}"
+    )
+
+    await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text)
 
     return ConversationHandler.END
 
@@ -78,5 +81,5 @@ def main():
 
     app.run_polling()
 
-if __name__ == "__main__":
+if name == "main":
     main()
