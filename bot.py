@@ -134,3 +134,5 @@ async def product(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["quantity"] = update.message.text
+if __name__ == "__main__":
+    main()
